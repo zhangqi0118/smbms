@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-4.3.xsd
+    http://www.springframework.org/schema/tx
+    http://www.springframework.org/schema/tx/spring-tx-4.3.xsd
+    http://www.springframework.org/schema/context
+    http://www.springframework.org/schema/context/spring-context-4.3.xsd
+    http://www.springframework.org/schema/aop
+    http://www.springframework.org/schema/aop/spring-aop-4.3.xsd">
+    <!--    读取配置文件-->
+    <context:property-placeholder location="classpath:db.properties" />
+    <context:component-scan base-package="com.smbms"/>
+    <!--    配置数据源-->
+    <!--    连接MySQL数据库-->
+    <bean id="dataSource_01" class="com.alibaba.druid.pool.DruidDataSource" >
+        <property name="driverClassName" value="${druid.driverClass}"/>
+        <property name="url" value="${druid.url}"/>
+        <property name="username" value="${druid.username}"/>
+        <property name="password" value="${druid.password}"/>
+    </bean>
+
+    <!--    连接Oracle数据库-->
+    <bean  id="dataSource_02" class="com.alibaba.druid.pool.DruidDataSource" >
+        <property name="driverClassName" value="${jdbc.driver}"/>
+        <property name="url" value="${jdbc.url}"/>
+        <property name="username" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+    </bean>
+    <bean id="multipleDataSource" class="com.smbms.config.MultipleDataSource">
+        <property name="defaultTargetDataSource" ref="dataSource_01" /><!--    默认MySQL数据库-->
+        <property name="targetDataSources">
+            <map>
+                <entry key="dataSource1" value-ref="dataSource_01" />
+                <entry key="dataSource2" value-ref="dataSource_02" />
+            </map>
+        </property>
+    </bean>
+    <!--    SqlSessionFactoryBean配置,提供SqlSession对象-->
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="dataSource_01"/>
+        <property name="configLocation" value="classpath:Mybatis-config.xml"/>
+        <property name="mapperLocations" value="classpath*:mapper/*Mapper.xml"/>
+    </bean>
+    <!--    SqlSessionTemplate负责管理SqlSession-->
+    <bean id="sqlSession" class="org.mybatis.spring.SqlSessionTemplate">
+        <constructor-arg index="0" ref="sqlSessionFactory"/>
+    </bean>
+    <!--        配置自动扫描映射类-->
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.smbms.mapper"/>
+    </bean>
+    <aop:aspectj-autoproxy proxy-target-class="true"></aop:aspectj-autoproxy>
+    <!--    配置事务管理器-->
+    <bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="multipleDataSource"/>
+    </bean>
+    <tx:annotation-driven transaction-manager="transactionManager" proxy-target-class="true" />
+    <!-- 编写通知：对事务进行增强，需要对切入点和具体执行事务细节 -->
+    <tx:advice id="txAdvice" transaction-manager="transactionManager">
+        <tx:attributes>
+            <tx:method name="*"  rollback-for=" java.lang.Exception"/>
+            <tx:method name="get*" read-only="true" propagation="SUPPORTS" timeout="3"/>
+            <tx:method name="del*" propagation="REQUIRED" rollback-for=" java.lang.Exception"/>
+            <tx:method name="add*" propagation="REQUIRED" rollback-for=" java.lang.Exception"/>
+            <!--rollback-for配置事务遇到异常必须回滚，no-rollback-for配置事务遇到异常必须不能回滚-->
+            <tx:method name="update*" isolation="SERIALIZABLE" rollback-for=" java.lang.Exception"/>
+        </tx:attributes>
+    </tx:advice>
+    <aop:config>
+        <aop:aspect ref="serviceLogger">
+            <!--定义aop切点-->
+            <aop:pointcut expression="execution(* com.smbms.service..*.*(..)))" id="cut"/>
+            <!--配置环绕通知,设置环绕通知对应的方法名及切入点-->
+            <aop:around method="around" pointcut-ref="cut" />
+        </aop:aspect>
+    </aop:config>
+    <aop:config>
+        <!-- 切面:将切入点和通知整合 -->
+        <aop:advisor advice-ref="txAdvice" pointcut-ref="cut"/>
+    </aop:config>
+</beans>
+
